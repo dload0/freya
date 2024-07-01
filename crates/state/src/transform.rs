@@ -1,7 +1,13 @@
 use freya_native_core::{
     exports::shipyard::Component,
     node_ref::NodeView,
-    prelude::{AttributeMaskBuilder, AttributeName, Dependancy, NodeMaskBuilder, State},
+    prelude::{
+        AttributeMaskBuilder,
+        AttributeName,
+        Dependancy,
+        NodeMaskBuilder,
+        State,
+    },
     SendAnyMap,
 };
 use freya_native_core_macro::partial_derive_state;
@@ -9,12 +15,12 @@ use freya_native_core_macro::partial_derive_state;
 use crate::CustomAttributeValues;
 
 #[derive(Default, Clone, Debug, Component, PartialEq)]
-pub struct Transform {
+pub struct TransformState {
     pub rotate_degs: Option<f32>,
 }
 
 #[partial_derive_state]
-impl State<CustomAttributeValues> for Transform {
+impl State<CustomAttributeValues> for TransformState {
     type ParentDependencies = ();
 
     type ChildDependencies = ();

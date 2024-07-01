@@ -9,6 +9,7 @@ pub struct NativePlatformState {
     pub preferred_theme: PreferredTheme,
     pub navigation_mode: NavigationMode,
     pub information: PlatformInformation,
+    pub scale_factor: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

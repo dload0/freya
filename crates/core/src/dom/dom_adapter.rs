@@ -1,4 +1,9 @@
-use freya_native_core::{prelude::NodeType, real_dom::NodeImmutable, tree::TreeRef, NodeId};
+use freya_native_core::{
+    prelude::NodeType,
+    real_dom::NodeImmutable,
+    tree::TreeRef,
+    NodeId,
+};
 use freya_node_state::LayoutState;
 use rustc_hash::FxHashMap;
 use torin::prelude::*;
@@ -8,15 +13,16 @@ use crate::dom::DioxusDOM;
 /// RealDOM adapter for Torin.
 pub struct DioxusDOMAdapter<'a> {
     pub rdom: &'a DioxusDOM,
-
-    valid_nodes_cache: Option<FxHashMap<NodeId, bool>>,
+    pub scale_factor: f32,
+    cache: FxHashMap<NodeId, bool>,
 }
 
 impl<'a> DioxusDOMAdapter<'a> {
-    pub fn new_with_cache(rdom: &'a DioxusDOM) -> Self {
+    pub fn new(rdom: &'a DioxusDOM, scale_factor: f32) -> Self {
         Self {
             rdom,
-            valid_nodes_cache: Some(FxHashMap::default()),
+            scale_factor,
+            cache: FxHashMap::default(),
         }
     }
 }
@@ -38,7 +44,7 @@ impl DOMAdapter<NodeId> for DioxusDOMAdapter<'_> {
             layout.height = Size::Percentage(Length::new(100.0));
         }
 
-        Some(Node {
+        let mut node = Node {
             width: layout.width,
             height: layout.height,
             minimum_width: layout.minimum_width,
@@ -56,7 +62,11 @@ impl DOMAdapter<NodeId> for DioxusDOMAdapter<'_> {
             position: layout.position,
             content: layout.content,
             contains_text,
-        })
+        };
+
+        node.scale(self.scale_factor);
+
+        Some(node)
     }
 
     fn height(&self, node_id: &NodeId) -> Option<u16> {
@@ -69,12 +79,12 @@ impl DOMAdapter<NodeId> for DioxusDOMAdapter<'_> {
 
     fn children_of(&mut self, node_id: &NodeId) -> Vec<NodeId> {
         let mut children = self.rdom.tree_ref().children_ids(*node_id);
-        children.retain(|id| is_node_valid(self.rdom, &mut self.valid_nodes_cache, id));
+        children.retain(|id| is_node_valid(self.rdom, &mut self.cache, id));
         children
     }
 
     fn is_node_valid(&mut self, node_id: &NodeId) -> bool {
-        is_node_valid(self.rdom, &mut self.valid_nodes_cache, node_id)
+        is_node_valid(self.rdom, &mut self.cache, node_id)
     }
 
     fn root_id(&self) -> NodeId {
@@ -83,16 +93,10 @@ impl DOMAdapter<NodeId> for DioxusDOMAdapter<'_> {
 }
 
 /// Check is the given Node is valid or not, this means not being a placeholder or an unconnected Node.
-fn is_node_valid(
-    rdom: &DioxusDOM,
-    valid_nodes_cache: &mut Option<FxHashMap<NodeId, bool>>,
-    node_id: &NodeId,
-) -> bool {
+fn is_node_valid(rdom: &DioxusDOM, cache: &mut FxHashMap<NodeId, bool>, node_id: &NodeId) -> bool {
     // Check if Node was valid from cache
-    if let Some(valid_nodes_cache) = valid_nodes_cache {
-        if let Some(is_valid) = valid_nodes_cache.get(node_id) {
-            return *is_valid;
-        }
+    if let Some(is_valid) = cache.get(node_id) {
+        return *is_valid;
     }
 
     let node = rdom.get(*node_id);
@@ -132,9 +136,7 @@ fn is_node_valid(
     };
 
     // Save the validation result in the cache
-    if let Some(valid_nodes_cache) = valid_nodes_cache {
-        valid_nodes_cache.insert(*node_id, is_valid);
-    }
+    cache.insert(*node_id, is_valid);
 
     is_valid
 }

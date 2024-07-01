@@ -1,40 +1,59 @@
-use dioxus_core::{Template, VirtualDom};
-use freya_common::{EventMessage, TextGroupMeasurement};
+use std::sync::Arc;
+
+use dioxus_core::{
+    Template,
+    VirtualDom,
+};
+use freya_common::{
+    EventMessage,
+    TextGroupMeasurement,
+};
 use freya_core::prelude::*;
 use freya_engine::prelude::*;
-use freya_native_core::prelude::NodeImmutableDioxusExt;
-use freya_native_core::NodeId;
+use freya_native_core::{
+    prelude::NodeImmutableDioxusExt,
+    NodeId,
+};
 use futures_task::Waker;
-use futures_util::FutureExt;
+use futures_util::Future;
 use pin_utils::pin_mut;
-use std::sync::Arc;
-use tokio::sync::broadcast;
 use tokio::{
     select,
-    sync::{mpsc, watch, Notify},
+    sync::{
+        broadcast,
+        mpsc,
+        watch,
+    },
 };
-use torin::geometry::{Area, Size2D};
+use torin::geometry::{
+    Area,
+    Size2D,
+};
 use tracing::info;
-use winit::dpi::PhysicalSize;
-use winit::event_loop::{EventLoop, EventLoopProxy};
+use winit::{
+    dpi::PhysicalSize,
+    event_loop::EventLoopProxy,
+    window::Window,
+};
 
 use crate::{
-    accessibility::AccessKitManager, event_loop::run_event_loop, renderer::render_skia,
+    accessibility::AccessKitManager,
+    devtools::Devtools,
     winit_waker::winit_waker,
+    EmbeddedFonts,
+    HoveredNode,
 };
-use crate::{EmbeddedFonts, HoveredNode, WindowEnv};
 
 /// Manages the Application lifecycle
-pub struct App<State: 'static + Clone> {
+pub struct Application {
     pub(crate) sdom: SafeDOM,
     pub(crate) vdom: VirtualDom,
     pub(crate) events: EventsQueue,
     pub(crate) vdom_waker: Waker,
     pub(crate) proxy: EventLoopProxy<EventMessage>,
-    pub(crate) mutations_notifier: Option<Arc<Notify>>,
+    pub(crate) devtools: Option<Devtools>,
     pub(crate) event_emitter: EventEmitter,
     pub(crate) event_receiver: EventReceiver,
-    pub(crate) window_env: WindowEnv<State>,
     pub(crate) nodes_state: NodesState,
     pub(crate) platform_sender: NativePlatformSender,
     pub(crate) platform_receiver: NativePlatformReceiver,
@@ -48,21 +67,19 @@ pub struct App<State: 'static + Clone> {
     pub(crate) queued_focus_node: Option<AccessibilityId>,
 }
 
-impl<State: 'static + Clone> App<State> {
+impl Application {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         sdom: SafeDOM,
         vdom: VirtualDom,
         proxy: &EventLoopProxy<EventMessage>,
-        mutations_notifier: Option<Arc<Notify>>,
-        window_env: WindowEnv<State>,
+        devtools: Option<Devtools>,
+        window: &Window,
         fonts_config: EmbeddedFonts,
         mut plugins: PluginsManager,
         default_fonts: Vec<String>,
     ) -> Self {
-        let accessibility = AccessKitManager::new(&window_env.window, proxy.clone());
-
-        window_env.window.set_visible(true);
+        let accessibility = AccessKitManager::new(window, proxy.clone());
 
         let mut font_collection = FontCollection::new();
         let def_mgr = FontMgr::default();
@@ -75,22 +92,19 @@ impl<State: 'static + Clone> App<State> {
         }
 
         let font_mgr: FontMgr = provider.into();
-        font_collection.set_default_font_manager(def_mgr, "Fira Sans");
+        font_collection.set_default_font_manager(def_mgr, None);
         font_collection.set_dynamic_font_manager(font_mgr.clone());
 
         let (event_emitter, event_receiver) = mpsc::unbounded_channel();
         let (platform_sender, platform_receiver) = watch::channel(NativePlatformState {
             focused_id: ACCESSIBILITY_ROOT_ID,
-            preferred_theme: window_env
-                .window
-                .theme()
-                .map(|theme| theme.into())
-                .unwrap_or_default(),
+            preferred_theme: window.theme().map(|theme| theme.into()).unwrap_or_default(),
             navigation_mode: NavigationMode::default(),
-            information: PlatformInformation::from_winit(&window_env.window),
+            information: PlatformInformation::from_winit(window),
+            scale_factor: window.scale_factor(),
         });
 
-        plugins.send(PluginEvent::WindowCreated(&window_env.window));
+        plugins.send(PluginEvent::WindowCreated(window));
 
         Self {
             sdom,
@@ -98,10 +112,9 @@ impl<State: 'static + Clone> App<State> {
             events: EventsQueue::new(),
             vdom_waker: winit_waker(proxy),
             proxy: proxy.clone(),
-            mutations_notifier,
+            devtools,
             event_emitter,
             event_receiver,
-            window_env,
             nodes_state: NodesState::default(),
             accessibility,
             platform_sender,
@@ -117,8 +130,8 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Provide the launch state and few other utilities like the EventLoopProxy
-    pub fn provide_vdom_contexts(&mut self) {
-        if let Some(state) = self.window_env.window_config.state.clone() {
+    pub fn provide_vdom_contexts<State: 'static>(&mut self, app_state: Option<State>) {
+        if let Some(state) = app_state {
             self.vdom.insert_any_root_context(Box::new(state));
         }
         self.vdom
@@ -130,19 +143,19 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Make the first build of the VirtualDOM and sync it with the RealDOM.
-    pub fn init_doms(&mut self) {
+    pub fn init_doms<State: 'static>(&mut self, scale_factor: f32, app_state: Option<State>) {
         self.plugins.send(PluginEvent::StartedUpdatingDOM);
-        let scale_factor = self.window_env.window.scale_factor() as f32;
-        self.provide_vdom_contexts();
+
+        self.provide_vdom_contexts(app_state);
 
         self.sdom.get_mut().init_dom(&mut self.vdom, scale_factor);
         self.plugins.send(PluginEvent::FinishedUpdatingDOM);
     }
 
-    /// Update the DOM with the mutations from the VirtualDOM.
-    pub fn apply_vdom_changes(&mut self) -> (bool, bool) {
+    /// Update the RealDOM, layout and others with the latest changes from the VirtualDOM
+    pub fn render_mutations(&mut self, scale_factor: f32) -> (bool, bool) {
         self.plugins.send(PluginEvent::StartedUpdatingDOM);
-        let scale_factor = self.window_env.window.scale_factor() as f32;
+
         let (repaint, relayout) = self
             .sdom
             .get_mut()
@@ -151,8 +164,8 @@ impl<State: 'static + Clone> App<State> {
         self.plugins.send(PluginEvent::FinishedUpdatingDOM);
 
         if repaint {
-            if let Some(mutations_notifier) = &self.mutations_notifier {
-                mutations_notifier.notify_one();
+            if let Some(devtools) = &self.devtools {
+                devtools.update(&self.sdom.get());
             }
         }
 
@@ -160,58 +173,54 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Poll the VirtualDOM for any new change
-    pub fn poll_vdom(&mut self) {
-        let waker = &self.vdom_waker.clone();
-        let mut cx = std::task::Context::from_waker(waker);
+    pub fn poll_vdom(&mut self, window: &Window) {
+        let mut cx = std::task::Context::from_waker(&self.vdom_waker);
 
-        loop {
-            {
-                let fut = async {
-                    select! {
-                        ev = self.event_receiver.recv() => {
-                            if let Some(events) = ev {
-                                for event in events {
-                                    let name = event.name.into();
-                                    let data = event.data.any();
-                                    let fdom = self.sdom.get();
-                                    let rdom = fdom.rdom();
-                                    let node = rdom.get(event.node_id);
-                                    if let Some(node) = node {
-                                        let element_id = node.mounted_id();
-                                        if let Some(element_id) = element_id {
-                                            self.vdom.handle_event(name, data, element_id, event.bubbles);
-                                            self.vdom.process_events();
-                                        }
-                                    }
-                                }
+        {
+            let fut = async {
+                select! {
+                    Some(events) = self.event_receiver.recv() => {
+                        let fdom = self.sdom.get();
+                        let rdom = fdom.rdom();
+                        for event in events {
+                            if let Some(element_id) = rdom
+                                .get(event.node_id)
+                                .and_then(|node| node.mounted_id())
+                            {
+                                let name = event.name.into();
+                                let data = event.data.any();
+                                self.vdom
+                                    .handle_event(name, data, element_id, event.bubbles);
+                                self.vdom.process_events();
                             }
-                        },
-                        _ = self.vdom.wait_for_work() => {},
-                    }
-                };
-                pin_mut!(fut);
-
-                match fut.poll_unpin(&mut cx) {
-                    std::task::Poll::Ready(_) => {}
-                    std::task::Poll::Pending => break,
+                        }
+                    },
+                    _ = self.vdom.wait_for_work() => {},
                 }
-            }
+            };
+            pin_mut!(fut);
 
-            let (must_repaint, must_relayout) = self.apply_vdom_changes();
-
-            if must_relayout {
-                self.measure_layout_on_next_render = true;
+            match fut.poll(&mut cx) {
+                std::task::Poll::Ready(_) => {
+                    self.proxy.send_event(EventMessage::PollVDOM).ok();
+                }
+                std::task::Poll::Pending => return,
             }
+        }
 
-            if must_relayout || must_repaint {
-                self.window_env.window.request_redraw();
-            }
+        let (must_repaint, must_relayout) = self.render_mutations(window.scale_factor() as f32);
+
+        if must_relayout {
+            self.measure_layout_on_next_render = true;
+        }
+
+        if must_relayout || must_repaint {
+            window.request_redraw();
         }
     }
 
     /// Process the events queue
-    pub fn process_events(&mut self) {
-        let scale_factor = self.window_env.window.scale_factor();
+    pub fn process_events(&mut self, scale_factor: f64) {
         process_events(
             &self.sdom.get(),
             &mut self.events,
@@ -224,26 +233,28 @@ impl<State: 'static + Clone> App<State> {
     /// Create the Accessibility tree
     /// This will iterater the DOM ordered by layers (top to bottom)
     /// and add every element with an accessibility ID to the Accessibility Tree
-    pub fn process_accessibility(&mut self) {
-        let fdom = &self.sdom.get();
-        let layout = fdom.layout();
-        let rdom = fdom.rdom();
+    pub fn process_accessibility(&mut self, window: &Window) {
+        {
+            let fdom = &self.sdom.get();
+            let layout = fdom.layout();
+            let rdom = fdom.rdom();
 
-        process_accessibility(
-            &layout,
-            rdom,
-            &mut self.accessibility.accessibility_manager().lock().unwrap(),
-        );
+            process_accessibility(
+                &layout,
+                rdom,
+                &mut self.accessibility.accessibility_manager().lock().unwrap(),
+            );
+        }
 
         if let Some(node_id) = self.queued_focus_node.take() {
-            self.focus_node(node_id)
+            self.focus_node(node_id, window)
         }
     }
 
     /// Send an event
-    pub fn send_event(&mut self, event: PlatformEvent) {
+    pub fn send_event(&mut self, event: PlatformEvent, scale_factor: f64) {
         self.events.push(event);
-        self.process_events();
+        self.process_events(scale_factor);
     }
 
     /// Replace a VirtualDOM Template
@@ -252,60 +263,53 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Render the App into the Window Canvas
-    pub fn render(&mut self, hovered_node: &HoveredNode) {
+    pub fn render(&mut self, hovered_node: &HoveredNode, canvas: &Canvas, window: &Window) {
         self.plugins.send(PluginEvent::BeforeRender {
-            canvas: self.window_env.canvas(),
+            canvas,
             font_collection: &self.font_collection,
             freya_dom: &self.sdom.get(),
         });
 
-        self.start_render(hovered_node);
+        self.start_render(hovered_node, canvas, window.scale_factor() as f32);
 
         self.accessibility
-            .render_accessibility(self.window_env.window.title().as_str());
+            .render_accessibility(window.title().as_str());
 
         self.plugins.send(PluginEvent::AfterRender {
-            canvas: self.window_env.canvas(),
+            canvas,
             font_collection: &self.font_collection,
             freya_dom: &self.sdom.get(),
         });
-
-        self.finish_render();
     }
 
     /// Resize the Window
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+    pub fn resize(&mut self, window: &Window) {
         self.measure_layout_on_next_render = true;
         self.sdom.get().layout().reset();
-        self.window_env.resize(size);
         self.platform_sender.send_modify(|state| {
-            state.information = PlatformInformation::from_winit(&self.window_env.window);
+            state.information = PlatformInformation::from_winit(window);
         })
     }
 
     /// Measure the a text group given it's ID.
-    pub fn measure_text_group(&self, text_measurement: TextGroupMeasurement) {
-        let scale_factor = self.window_env.window.scale_factor() as f32;
+    pub fn measure_text_group(&self, text_measurement: TextGroupMeasurement, scale_factor: f64) {
         self.sdom
             .get()
             .measure_paragraphs(text_measurement, scale_factor);
     }
 
-    pub fn focus_node(&self, node_id: AccessibilityId) {
+    pub fn focus_node(&mut self, node_id: AccessibilityId, window: &Window) {
         self.accessibility
-            .focus_node(node_id, &self.platform_sender, &self.window_env.window)
+            .focus_node(node_id, &self.platform_sender, window)
     }
 
     pub fn queue_focus_node(&mut self, node_id: AccessibilityId) {
         self.queued_focus_node = Some(node_id);
     }
 
-    pub fn focus_next_node(&self, direction: AccessibilityFocusDirection) {
-        self.accessibility.focus_next_node(
-            direction,
-            &self.platform_sender,
-            &self.window_env.window,
-        )
+    pub fn focus_next_node(&mut self, direction: AccessibilityFocusDirection, window: &Window) {
+        self.accessibility
+            .focus_next_node(direction, &self.platform_sender, window)
     }
 
     /// Notify components subscribed to event loop ticks.
@@ -321,7 +325,7 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Measure the layout
-    pub fn process_layout(&mut self) {
+    pub fn process_layout(&mut self, inner_size: PhysicalSize<u32>, scale_factor: f64) {
         self.accessibility.clear_accessibility();
 
         {
@@ -330,13 +334,11 @@ impl<State: 'static + Clone> App<State> {
             self.plugins
                 .send(PluginEvent::StartedLayout(&fdom.layout()));
 
-            let window_size = self.window_env.window.inner_size();
-            let scale_factor = self.window_env.window.scale_factor() as f32;
             process_layout(
                 &fdom,
                 Area::from_size(Size2D::from((
-                    window_size.width as f32,
-                    window_size.height as f32,
+                    inner_size.width as f32,
+                    inner_size.height as f32,
                 ))),
                 &mut self.font_collection,
                 scale_factor,
@@ -347,11 +349,9 @@ impl<State: 'static + Clone> App<State> {
                 .send(PluginEvent::FinishedLayout(&fdom.layout()));
         }
 
-        if let Some(mutations_notifier) = &self.mutations_notifier {
-            mutations_notifier.notify_one();
+        if let Some(devtools) = &self.devtools {
+            devtools.update(&self.sdom.get())
         }
-
-        self.process_accessibility();
 
         let fdom = self.sdom.get();
         info!(
@@ -362,58 +362,35 @@ impl<State: 'static + Clone> App<State> {
     }
 
     /// Start rendering the RealDOM to Window
-    pub fn start_render(&mut self, hovered_node: &HoveredNode) {
-        self.window_env.clear();
-
-        let canvas = self.window_env.canvas();
+    pub fn start_render(&mut self, hovered_node: &HoveredNode, canvas: &Canvas, scale_factor: f32) {
         let fdom = self.sdom.get();
 
-        let mut matrices: Vec<(Matrix, Vec<NodeId>)> = Vec::default();
-        let mut opacities: Vec<(f32, Vec<NodeId>)> = Vec::default();
+        let matrices: Vec<(Matrix, Vec<NodeId>)> = Vec::default();
+        let opacities: Vec<(f32, Vec<NodeId>)> = Vec::default();
 
-        process_render(
-            &fdom,
-            &mut self.font_collection,
-            |fdom, node_id, area, font_collection, layout| {
-                let render_wireframe = if let Some(hovered_node) = &hovered_node {
-                    hovered_node
-                        .lock()
-                        .unwrap()
-                        .map(|id| id == *node_id)
-                        .unwrap_or_default()
-                } else {
-                    false
-                };
-                if let Some(dioxus_node) = fdom.rdom().get(*node_id) {
-                    render_skia(
-                        canvas,
-                        area,
-                        &dioxus_node,
-                        font_collection,
-                        &self.font_mgr,
-                        render_wireframe,
-                        &mut matrices,
-                        &mut opacities,
-                        &self.default_fonts,
-                        layout,
-                    );
-                }
-            },
-        );
-    }
+        let mut skia_renderer = SkiaRenderer {
+            canvas,
+            font_collection: &mut self.font_collection,
+            font_manager: &self.font_mgr,
+            matrices,
+            opacities,
+            default_fonts: &self.default_fonts,
+            scale_factor,
+        };
 
-    /// Finish all rendering in the Window
-    pub fn finish_render(&mut self) {
-        self.window_env.finish_render();
-    }
-
-    /// Run the application.
-    pub fn run(
-        self,
-        event_loop: EventLoop<EventMessage>,
-        proxy: EventLoopProxy<EventMessage>,
-        hovered_node: HoveredNode,
-    ) {
-        run_event_loop(self, event_loop, proxy, hovered_node)
+        process_render(&fdom, |fdom, node_id, layout_node, layout| {
+            let render_wireframe = if let Some(hovered_node) = &hovered_node {
+                hovered_node
+                    .lock()
+                    .unwrap()
+                    .map(|id| id == *node_id)
+                    .unwrap_or_default()
+            } else {
+                false
+            };
+            if let Some(dioxus_node) = fdom.rdom().get(*node_id) {
+                skia_renderer.render(layout_node, &dioxus_node, render_wireframe, layout);
+            }
+        });
     }
 }

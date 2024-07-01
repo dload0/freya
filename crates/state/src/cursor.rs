@@ -1,30 +1,42 @@
 use freya_common::ParagraphElements;
 use freya_engine::prelude::*;
 use freya_native_core::{
-    attributes::AttributeName, exports::shipyard::Component, node::OwnedAttributeValue,
-    tags::TagName,
-};
-use freya_native_core::{
+    attributes::AttributeName,
+    exports::shipyard::Component,
+    node::OwnedAttributeValue,
     node_ref::NodeView,
-    prelude::{AttributeMaskBuilder, Dependancy, NodeMaskBuilder, State},
+    prelude::{
+        AttributeMaskBuilder,
+        Dependancy,
+        NodeMaskBuilder,
+        State,
+    },
+    tags::TagName,
     SendAnyMap,
 };
 use freya_native_core_macro::partial_derive_state;
 
-use crate::{CursorMode, CursorReference, CustomAttributeValues, Parse};
+use crate::{
+    CursorMode,
+    CursorReference,
+    CustomAttributeValues,
+    HighlightMode,
+    Parse,
+};
 
 #[derive(Clone, Debug, PartialEq, Component)]
-pub struct CursorSettings {
+pub struct CursorState {
     pub position: Option<i32>,
     pub color: Color,
     pub mode: CursorMode,
     pub cursor_id: Option<usize>,
     pub highlights: Option<Vec<(usize, usize)>>,
     pub highlight_color: Color,
+    pub highlight_mode: HighlightMode,
     pub cursor_ref: Option<CursorReference>,
 }
 
-impl Default for CursorSettings {
+impl Default for CursorState {
     fn default() -> Self {
         Self {
             position: None,
@@ -33,13 +45,14 @@ impl Default for CursorSettings {
             cursor_id: None,
             highlights: None,
             highlight_color: Color::from_rgb(87, 108, 188),
+            highlight_mode: HighlightMode::default(),
             cursor_ref: None,
         }
     }
 }
 
 #[partial_derive_state]
-impl State<CustomAttributeValues> for CursorSettings {
+impl State<CustomAttributeValues> for CursorState {
     type ParentDependencies = (Self,);
 
     type ChildDependencies = ();
@@ -54,6 +67,7 @@ impl State<CustomAttributeValues> for CursorSettings {
             AttributeName::CursorId,
             AttributeName::Highlights,
             AttributeName::HighlightColor,
+            AttributeName::HighlightMode,
             AttributeName::CursorReference,
         ]))
         .with_tag();
@@ -111,6 +125,13 @@ impl State<CustomAttributeValues> for CursorSettings {
                         if let Some(value) = attr.value.as_text() {
                             if let Ok(highlight_color) = Color::parse(value) {
                                 cursor.highlight_color = highlight_color;
+                            }
+                        }
+                    }
+                    AttributeName::HighlightMode => {
+                        if let Some(value) = attr.value.as_text() {
+                            if let Ok(highlight_mode) = HighlightMode::parse(value) {
+                                cursor.highlight_mode = highlight_mode;
                             }
                         }
                     }

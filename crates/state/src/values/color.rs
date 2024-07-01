@@ -1,6 +1,8 @@
-use crate::Parse;
-use freya_engine::prelude::*;
 use std::fmt;
+
+use freya_engine::prelude::*;
+
+use crate::Parse;
 
 pub trait DisplayColor {
     fn fmt_rgb(&self, f: &mut fmt::Formatter) -> fmt::Result;
@@ -111,7 +113,7 @@ fn parse_rgb(color: &str) -> Result<Color, ParseColorError> {
         if let Ok(u8_alpha) = alpha_trimmed.parse::<u8>() {
             Ok(Color::from_argb(u8_alpha, r, g, b))
         } else if let Ok(f32_alpha) = alpha_trimmed.parse::<f32>() {
-            let a = (255.0 * f32_alpha).min(255.0).max(0.0).round() as u8;
+            let a = (255.0 * f32_alpha).clamp(0.0, 255.0).round() as u8;
             Ok(Color::from_argb(a, r, g, b))
         } else {
             Err(ParseColorError)

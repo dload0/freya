@@ -1,14 +1,32 @@
 use std::time::Duration;
 
-use dioxus_core::prelude::{spawn, use_hook, Task};
-use dioxus_hooks::{use_memo, use_reactive, use_signal, Dependency};
-use dioxus_signals::{Memo, ReadOnlySignal, Readable, Signal, Writable};
+use dioxus_core::prelude::{
+    spawn,
+    use_hook,
+    Task,
+};
+use dioxus_hooks::{
+    use_memo,
+    use_reactive,
+    use_signal,
+    Dependency,
+};
+use dioxus_signals::{
+    Memo,
+    ReadOnlySignal,
+    Readable,
+    Signal,
+    Writable,
+};
 use easer::functions::*;
 use freya_engine::prelude::Color;
 use freya_node_state::Parse;
 use tokio::time::Instant;
 
-use crate::{use_platform, UsePlatform};
+use crate::{
+    use_platform,
+    UsePlatform,
+};
 
 pub fn apply_value(
     origin: f32,
@@ -343,6 +361,8 @@ pub trait AnimatedValue {
     fn advance(&mut self, index: i32, direction: AnimDirection);
 }
 
+pub type ReadAnimatedValue = ReadOnlySignal<Box<dyn AnimatedValue>>;
+
 #[derive(Default, PartialEq, Clone)]
 pub struct Context {
     animated_values: Vec<Signal<Box<dyn AnimatedValue>>>,
@@ -351,10 +371,7 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn with(
-        &mut self,
-        animated_value: impl AnimatedValue + 'static,
-    ) -> ReadOnlySignal<Box<dyn AnimatedValue>> {
+    pub fn with(&mut self, animated_value: impl AnimatedValue + 'static) -> ReadAnimatedValue {
         let val: Box<dyn AnimatedValue> = Box::new(animated_value);
         let signal = Signal::new(val);
         self.animated_values.push(signal);
@@ -560,13 +577,11 @@ impl<Animated: PartialEq + Clone + 'static> UseAnimator<Animated> {
 ///
 ///     let width = animation.get().read().as_f32();
 ///
-///     rsx!(
-///         rect {
-///             width: "{width}",
-///             height: "100%",
-///             background: "blue"
-///         }
-///     )
+///     rsx!(rect {
+///         width: "{width}",
+///         height: "100%",
+///         background: "blue"
+///     })
 /// }
 /// ```
 ///
@@ -579,19 +594,17 @@ impl<Animated: PartialEq + Clone + 'static> UseAnimator<Animated> {
 ///         ctx.auto_start(true);
 ///         (
 ///             ctx.with(AnimNum::new(0., 100.).time(50)),
-///             ctx.with(AnimColor::new("red", "blue").time(50))
+///             ctx.with(AnimColor::new("red", "blue").time(50)),
 ///         )
 ///     });
 ///
 ///     let (width, color) = animation.get();
 ///
-///     rsx!(
-///         rect {
-///             width: "{width.read().as_f32()}",
-///             height: "100%",
-///             background: "{color.read().as_string()}"
-///         }
-///     )
+///     rsx!(rect {
+///         width: "{width.read().as_f32()}",
+///         height: "100%",
+///         background: "{color.read().as_string()}"
+///     })
 /// }
 /// ```
 ///
@@ -604,22 +617,19 @@ impl<Animated: PartialEq + Clone + 'static> UseAnimator<Animated> {
 ///         ctx.on_finish(OnFinish::Restart);
 ///         (
 ///             ctx.with(AnimNum::new(0., 100.).time(50)),
-///             ctx.with(AnimColor::new("red", "blue").time(50))
+///             ctx.with(AnimColor::new("red", "blue").time(50)),
 ///         )
 ///     });
 ///
 ///     let (width, color) = animation.get();
 ///
-///     rsx!(
-///         rect {
-///             width: "{width.read().as_f32()}",
-///             height: "100%",
-///             background: "{color.read().as_string()}"
-///         }
-///     )
+///     rsx!(rect {
+///         width: "{width.read().as_f32()}",
+///         height: "100%",
+///         background: "{color.read().as_string()}"
+///     })
 /// }
 /// ```
-///
 pub fn use_animation<Animated: PartialEq + Clone + 'static>(
     run: impl Fn(&mut Context) -> Animated + Clone + 'static,
 ) -> UseAnimator<Animated> {

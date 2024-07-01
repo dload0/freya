@@ -4,12 +4,18 @@
 )]
 
 use std::{
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
 use freya::prelude::*;
-use skia_safe::{Color, Data, Paint, Rect, RuntimeEffect};
+use skia_safe::{
+    Color,
+    Data,
+    Paint,
+    Rect,
+    RuntimeEffect,
+};
 
 fn main() {
     launch(app);
@@ -21,12 +27,12 @@ const SHADER: &str = "
 
  vec4 main(vec2 cords) {
      vec2 U = cords / 55.;
-    
+
      float t = .8* u_time;
      float r = ceil(U.x + t) + ceil(U.y + t);
      float v = mod(r, 4.) > 1. ? U.x : U.y;
      float b = step(fract(v+.2), .5);
-    
+
      vec4 C = vec4(.9*b, 0. + abs(sin(t) * 0.5), .6-b, 1.);
      return C;
  }
@@ -46,14 +52,12 @@ fn app() -> Element {
         });
     });
 
-    let canvas = use_canvas((), |_| {
+    let canvas = use_canvas(|| {
         let shader = RuntimeEffect::make_for_shader(SHADER, None).unwrap();
-        let shader_wrapper = Arc::new(Mutex::new(ShaderWrapper(shader)));
+        let shader_wrapper = Arc::new(ShaderWrapper(shader));
         let instant = Instant::now();
 
-        Box::new(move |canvas, _, region| {
-            let shader = shader_wrapper.lock().unwrap();
-
+        Box::new(move |canvas, _, region, _| {
             let mut builder = UniformsBuilder::default();
             builder.set(
                 "u_resolution",
@@ -64,9 +68,9 @@ fn app() -> Element {
                 UniformValue::Float(instant.elapsed().as_secs_f32()),
             );
 
-            let uniforms = Data::new_copy(&builder.build(&shader.0));
+            let uniforms = Data::new_copy(&builder.build(&shader_wrapper.0));
 
-            let shader = shader.0.make_shader(uniforms, &[], None).unwrap();
+            let shader = shader_wrapper.0.make_shader(uniforms, &[], None).unwrap();
 
             let mut paint = Paint::default();
             paint.set_anti_alias(true);
@@ -77,8 +81,8 @@ fn app() -> Element {
                 Rect::new(
                     region.min_x(),
                     region.min_y(),
-                    region.width(),
-                    region.height(),
+                    region.max_x(),
+                    region.max_y(),
                 ),
                 &paint,
             );

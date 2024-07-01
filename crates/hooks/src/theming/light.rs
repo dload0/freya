@@ -1,5 +1,7 @@
-use crate::cow_borrowed;
-use crate::theming::*;
+use crate::{
+    cow_borrowed,
+    theming::*,
+};
 
 pub const LIGHT_THEME: Theme = Theme {
     name: "light",
@@ -23,7 +25,7 @@ pub const LIGHT_THEME: Theme = Theme {
         border_fill: cow_borrowed!("rgb(210, 210, 210)"),
         focus_border_fill: cow_borrowed!("rgb(180, 180, 180)"),
         shadow: cow_borrowed!("0 4 5 0 rgb(0, 0, 0, 0.1)"),
-        padding: cow_borrowed!("8 16"),
+        padding: cow_borrowed!("8 12"),
         margin: cow_borrowed!("4"),
         corner_radius: cow_borrowed!("8"),
         width: cow_borrowed!("auto"),
@@ -182,5 +184,27 @@ pub const LIGHT_THEME: Theme = Theme {
         cross_fill: cow_borrowed!("rgb(40, 40, 40)"),
         width: cow_borrowed!("350"),
         height: cow_borrowed!("200"),
+    },
+    tab: TabTheme {
+        background: cow_borrowed!("rgb(245, 245, 245)"),
+        hover_background: cow_borrowed!("rgb(235, 235, 235)"),
+        font_theme: FontTheme {
+            color: cow_borrowed!("rgb(10, 10, 10)"),
+        },
+        border_fill: cow_borrowed!("none"),
+        focus_border_fill: cow_borrowed!("rgb(180, 180, 180)"),
+        padding: cow_borrowed!("8 16"),
+        width: cow_borrowed!("auto"),
+        height: cow_borrowed!("auto"),
+    },
+    bottom_tab: BottomTabTheme {
+        background: cow_borrowed!("transparent"),
+        hover_background: cow_borrowed!("rgb(230, 230, 230)"),
+        font_theme: FontTheme {
+            color: cow_borrowed!("rgb(10, 10, 10)"),
+        },
+        padding: cow_borrowed!("8 10"),
+        width: cow_borrowed!("auto"),
+        height: cow_borrowed!("auto"),
     },
 };

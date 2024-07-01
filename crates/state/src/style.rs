@@ -3,19 +3,31 @@ use freya_native_core::{
     exports::shipyard::Component,
     node::OwnedAttributeValue,
     node_ref::NodeView,
-    prelude::{AttributeMaskBuilder, Dependancy, NodeMaskBuilder, State},
+    prelude::{
+        AttributeMaskBuilder,
+        Dependancy,
+        NodeMaskBuilder,
+        State,
+    },
     SendAnyMap,
 };
 use freya_native_core_macro::partial_derive_state;
-use torin::scaled::Scaled;
 
 use crate::{
-    parsing::ExtSplit, AttributesBytes, Border, BorderAlignment, CornerRadius,
-    CustomAttributeValues, Fill, OverflowMode, Parse, Shadow,
+    parsing::ExtSplit,
+    AttributesBytes,
+    Border,
+    BorderAlignment,
+    CornerRadius,
+    CustomAttributeValues,
+    Fill,
+    OverflowMode,
+    Parse,
+    Shadow,
 };
 
 #[derive(Default, Debug, Clone, PartialEq, Component)]
-pub struct Style {
+pub struct StyleState {
     pub background: Fill,
     pub border: Border,
     pub shadows: Vec<Shadow>,
@@ -27,7 +39,7 @@ pub struct Style {
 }
 
 #[partial_derive_state]
-impl State<CustomAttributeValues> for Style {
+impl State<CustomAttributeValues> for StyleState {
     type ParentDependencies = (Self,);
 
     type ChildDependencies = ();
@@ -56,10 +68,9 @@ impl State<CustomAttributeValues> for Style {
         _node: <Self::NodeDependencies as Dependancy>::ElementBorrowed<'a>,
         _parent: Option<<Self::ParentDependencies as Dependancy>::ElementBorrowed<'a>>,
         _children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
-        context: &SendAnyMap,
+        _context: &SendAnyMap,
     ) -> bool {
-        let mut style = Style::default();
-        let scale_factor = context.get::<f32>().unwrap();
+        let mut style = StyleState::default();
 
         if let Some(attributes) = node_view.attributes() {
             for attr in attributes {
@@ -75,7 +86,6 @@ impl State<CustomAttributeValues> for Style {
                         if let Some(value) = attr.value.as_text() {
                             if let Ok(mut border) = Border::parse(value) {
                                 border.alignment = style.border.alignment;
-                                border.scale(*scale_factor);
 
                                 style.border = border;
                             }
@@ -92,18 +102,13 @@ impl State<CustomAttributeValues> for Style {
                         if let Some(value) = attr.value.as_text() {
                             style.shadows = value
                                 .split_excluding_group(',', '(', ')')
-                                .map(|chunk| {
-                                    let mut shadow = Shadow::parse(chunk).unwrap_or_default();
-                                    shadow.scale(*scale_factor);
-                                    shadow
-                                })
+                                .map(|chunk| Shadow::parse(chunk).unwrap_or_default())
                                 .collect();
                         }
                     }
                     AttributeName::CornerRadius => {
                         if let Some(value) = attr.value.as_text() {
                             if let Ok(mut radius) = CornerRadius::parse(value) {
-                                radius.scale(*scale_factor);
                                 radius.smoothing = style.corner_radius.smoothing;
                                 style.corner_radius = radius;
                             }

@@ -1,9 +1,24 @@
-use dioxus_core::{ElementId, WriteMutations};
-use freya_common::{Layers, ParagraphElements};
-use freya_native_core::{
-    dioxus::DioxusNativeCoreMutationWriter, prelude::NodeImmutable, tree::TreeRef, NodeId,
+use dioxus_core::{
+    ElementId,
+    WriteMutations,
 };
-use freya_node_state::{CursorSettings, CustomAttributeValues, LayerState};
+use freya_common::{
+    Layers,
+    ParagraphElements,
+};
+use freya_native_core::{
+    prelude::{
+        DioxusNativeCoreMutationWriter,
+        NodeImmutable,
+    },
+    tree::TreeRef,
+    NodeId,
+};
+use freya_node_state::{
+    CursorState,
+    CustomAttributeValues,
+    LayerState,
+};
 use torin::torin::Torin;
 
 use crate::prelude::DioxusDOMAdapter;
@@ -13,12 +28,13 @@ pub struct MutationsWriter<'a> {
     pub layout: &'a mut Torin<NodeId>,
     pub layers: &'a Layers,
     pub paragraphs: &'a ParagraphElements,
+    pub scale_factor: f32,
 }
 
 impl<'a> MutationsWriter<'a> {
     pub fn remove(&mut self, id: ElementId) {
         let node_id = self.native_writer.state.element_to_node_id(id);
-        let mut dom_adapter = DioxusDOMAdapter::new_with_cache(self.native_writer.rdom);
+        let mut dom_adapter = DioxusDOMAdapter::new(self.native_writer.rdom, self.scale_factor);
 
         // Remove from layout
         self.layout.remove(node_id, &mut dom_adapter, true);
@@ -32,6 +48,17 @@ impl<'a> MutationsWriter<'a> {
                     continue;
                 }
 
+                let layer_state = node.get::<LayerState>();
+                let cursor_state = node.get::<CursorState>();
+
+                let Some((layer_state, cursor_state)) = layer_state.zip(cursor_state) else {
+                    // There might exist Nodes in the RealDOM with no states yet,
+                    // this is mainly due to nodes being created in the same run as when this function (remove) is being called,
+                    // like nodes created by loaded templates.
+                    // In this case we can safely skip these nodes.
+                    continue;
+                };
+
                 let traverse_children = node
                     .node_type()
                     .tag()
@@ -43,13 +70,11 @@ impl<'a> MutationsWriter<'a> {
                 }
 
                 // Remove from layers
-                let layer_state = node.get::<LayerState>().unwrap();
                 self.layers
                     .remove_node_from_layer(node_id, layer_state.layer);
 
                 // Remove from paragraph elements
-                let cursor_settings = node.get::<CursorSettings>().unwrap();
-                if let Some(cursor_ref) = cursor_settings.cursor_ref.as_ref() {
+                if let Some(cursor_ref) = cursor_state.cursor_ref.as_ref() {
                     self.paragraphs
                         .remove_paragraph(node_id, &cursor_ref.text_id);
                 }

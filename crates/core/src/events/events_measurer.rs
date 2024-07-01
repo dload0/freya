@@ -1,12 +1,21 @@
-use freya_native_core::NodeId;
-use freya_native_core::{real_dom::NodeImmutable, tree::TreeRef};
-
 use freya_engine::prelude::*;
-use freya_node_state::{Fill, Style, ViewportState};
+use freya_native_core::{
+    real_dom::NodeImmutable,
+    tree::TreeRef,
+    NodeId,
+};
+use freya_node_state::{
+    Fill,
+    StyleState,
+    ViewportState,
+};
 use itertools::sorted;
 
-pub use crate::events::{DomEvent, NodesState, PlatformEvent};
-
+pub use crate::events::{
+    DomEvent,
+    NodesState,
+    PlatformEvent,
+};
 use crate::prelude::*;
 
 /// Process the events and emit them to the VirtualDOM
@@ -223,7 +232,7 @@ fn measure_dom_events(
                     }
                 }
 
-                let Style { background, .. } = &*node.get::<Style>().unwrap();
+                let StyleState { background, .. } = &*node.get::<StyleState>().unwrap();
 
                 if background != &Fill::Color(Color::TRANSPARENT)
                     && !event.get_name().does_go_through_solid()

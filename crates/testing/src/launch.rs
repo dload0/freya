@@ -1,18 +1,26 @@
-use dioxus_core::fc_to_builder;
-use dioxus_core::Element;
-use dioxus_core::VirtualDom;
+use dioxus_core::{
+    fc_to_builder,
+    Element,
+    VirtualDom,
+};
 use dioxus_core_macro::rsx;
 use freya_common::EventMessage;
 use freya_components::NativeContainer;
 use freya_core::prelude::*;
 use freya_engine::prelude::*;
-use tokio::sync::mpsc::unbounded_channel;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::{
+    broadcast,
+    mpsc::unbounded_channel,
+    watch,
+};
 use winit::window::CursorIcon;
 
-use crate::config::TestingConfig;
-use crate::test_handler::TestingHandler;
-use crate::test_utils::TestUtils;
+use crate::{
+    config::TestingConfig,
+    test_handler::TestingHandler,
+    test_utils::TestUtils,
+    SCALE_FACTOR,
+};
 
 /// Run a Component in a headless testing environment.
 ///
@@ -34,17 +42,19 @@ pub fn launch_test_with_config(root: AppComponent, config: TestingConfig) -> Tes
         preferred_theme: PreferredTheme::default(),
         navigation_mode: NavigationMode::default(),
         information: PlatformInformation::new(config.size, false, false, false),
+        scale_factor: SCALE_FACTOR,
     });
     let mut font_collection = FontCollection::new();
     let font_mgr = FontMgr::default();
     font_collection.set_dynamic_font_manager(font_mgr.clone());
-    font_collection.set_default_font_manager(font_mgr, "Fira Sans");
+    font_collection.set_default_font_manager(font_mgr.clone(), None);
 
     let mut handler = TestingHandler {
         vdom,
         events_queue: EventsQueue::new(),
         nodes_state: NodesState::default(),
         font_collection,
+        font_mgr,
         event_emitter,
         event_receiver,
         utils: TestUtils { sdom },

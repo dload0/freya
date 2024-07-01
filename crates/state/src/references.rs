@@ -3,21 +3,30 @@ use freya_native_core::{
     exports::shipyard::Component,
     node::OwnedAttributeValue,
     node_ref::NodeView,
-    prelude::{AttributeMaskBuilder, Dependancy, NodeMaskBuilder, State},
+    prelude::{
+        AttributeMaskBuilder,
+        Dependancy,
+        NodeMaskBuilder,
+        State,
+    },
     SendAnyMap,
 };
 use freya_native_core_macro::partial_derive_state;
 
-use crate::{CanvasReference, CustomAttributeValues, ImageReference};
+use crate::{
+    CanvasReference,
+    CustomAttributeValues,
+    ImageReference,
+};
 
 #[derive(Default, PartialEq, Clone, Debug, Component)]
-pub struct References {
+pub struct ReferencesState {
     pub image_ref: Option<ImageReference>,
     pub canvas_ref: Option<CanvasReference>,
 }
 
 #[partial_derive_state]
-impl State<CustomAttributeValues> for References {
+impl State<CustomAttributeValues> for ReferencesState {
     type ParentDependencies = ();
 
     type ChildDependencies = ();
@@ -39,7 +48,7 @@ impl State<CustomAttributeValues> for References {
         _children: Vec<<Self::ChildDependencies as Dependancy>::ElementBorrowed<'a>>,
         _context: &SendAnyMap,
     ) -> bool {
-        let mut references = References::default();
+        let mut references = ReferencesState::default();
 
         if let Some(attributes) = node_view.attributes() {
             for attr in attributes {

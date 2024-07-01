@@ -18,6 +18,7 @@ fn app() -> Element {
                     .trim()
                     .to_string(),
             )
+            .with_allow_tabs(true)
         },
         EditableMode::MultipleLinesSingleEditor,
     );
@@ -60,6 +61,8 @@ fn app() -> Element {
                 scroll_with_arrows: false,
                 paragraph {
                     width: "100%",
+                    height: "100%",
+                    main_align: "center",
                     cursor_id: "0",
                     cursor_index: "{cursor_char}",
                     cursor_mode: "editable",

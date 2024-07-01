@@ -1,85 +1,154 @@
+use std::{
+    ffi::CString,
+    mem,
+    num::NonZeroU32,
+};
+
+use dioxus_core::VirtualDom;
 use freya_common::EventMessage;
+use freya_core::dom::SafeDOM;
 use freya_engine::prelude::*;
-use gl::{types::*, *};
-use glutin::context::GlProfile;
-use glutin::context::NotCurrentGlContext;
-use glutin::prelude::PossiblyCurrentGlContext;
+use gl::{
+    types::*,
+    *,
+};
 use glutin::{
-    config::{ConfigTemplateBuilder, GlConfig},
-    context::{ContextApi, ContextAttributesBuilder, PossiblyCurrentContext},
-    display::{GetGlDisplay, GlDisplay},
-    prelude::GlSurface,
-    surface::{Surface as GlutinSurface, SurfaceAttributesBuilder, WindowSurface},
+    config::{
+        ConfigTemplateBuilder,
+        GlConfig,
+    },
+    context::{
+        ContextApi,
+        ContextAttributesBuilder,
+        GlProfile,
+        NotCurrentGlContext,
+        PossiblyCurrentContext,
+    },
+    display::{
+        GetGlDisplay,
+        GlDisplay,
+    },
+    surface::{
+        GlSurface,
+        Surface as GlutinSurface,
+        SurfaceAttributesBuilder,
+        SwapInterval,
+        WindowSurface,
+    },
 };
 use glutin_winit::DisplayBuilder;
-use raw_window_handle::HasRawWindowHandle;
-use std::ffi::CString;
-use std::num::NonZeroU32;
-
-use winit::dpi::{LogicalSize, PhysicalSize};
 use winit::{
-    event_loop::EventLoop,
-    window::{Window, WindowBuilder},
+    dpi::LogicalSize,
+    event_loop::{
+        ActiveEventLoop,
+        EventLoopProxy,
+    },
+    raw_window_handle::HasWindowHandle,
+    window::Window,
 };
 
-use crate::config::WindowConfig;
+use crate::{
+    app::Application,
+    config::WindowConfig,
+    devtools::Devtools,
+    LaunchConfig,
+};
 
-/// Manager for a Window
-pub struct WindowEnv<State: Clone> {
+pub struct NotCreatedState<'a, State: Clone + 'static> {
+    pub(crate) sdom: SafeDOM,
+    pub(crate) vdom: VirtualDom,
+    pub(crate) devtools: Option<Devtools>,
+    pub(crate) config: LaunchConfig<'a, State>,
+}
+
+pub struct CreatedState {
     pub(crate) gr_context: DirectContext,
     pub(crate) surface: Surface,
     pub(crate) gl_surface: GlutinSurface<WindowSurface>,
     pub(crate) gl_context: PossiblyCurrentContext,
     pub(crate) window: Window,
+    pub(crate) window_config: WindowConfig,
     pub(crate) fb_info: FramebufferInfo,
     pub(crate) num_samples: usize,
     pub(crate) stencil_size: usize,
-    pub(crate) window_config: WindowConfig<State>,
+    pub(crate) app: Application,
+    pub(crate) is_window_focused: bool,
 }
 
-impl<T: Clone> Drop for WindowEnv<T> {
-    fn drop(&mut self) {
-        if !self.gl_context.is_current() && self.gl_context.make_current(&self.gl_surface).is_err()
-        {
-            self.gr_context.abandon();
-        }
+pub enum WindowState<'a, State: Clone + 'static> {
+    NotCreated(NotCreatedState<'a, State>),
+    Creating,
+    Created(CreatedState),
+}
+
+impl<'a, State: Clone + 'a> WindowState<'a, State> {
+    pub fn created_state(&mut self) -> &mut CreatedState {
+        let Self::Created(created) = self else {
+            panic!("Unexpected.")
+        };
+        created
     }
-}
 
-impl<T: Clone> WindowEnv<T> {
-    /// Setup the Window and related features
-    pub fn new(mut window_config: WindowConfig<T>, event_loop: &EventLoop<EventMessage>) -> Self {
-        let mut window_builder = WindowBuilder::new()
+    pub fn has_been_created(&self) -> bool {
+        matches!(self, Self::Created(..))
+    }
+
+    pub fn create(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        event_loop_proxy: &EventLoopProxy<EventMessage>,
+    ) {
+        let Self::NotCreated(NotCreatedState {
+            sdom,
+            vdom,
+            devtools,
+            mut config,
+        }) = mem::replace(self, WindowState::Creating)
+        else {
+            panic!("Unexpected.")
+        };
+
+        let mut window_attributes = Window::default_attributes()
             .with_visible(false)
-            .with_title(window_config.title)
-            .with_decorations(window_config.decorations)
-            .with_transparent(window_config.transparent)
-            .with_window_icon(window_config.icon.take())
+            .with_title(config.window_config.title)
+            .with_decorations(config.window_config.decorations)
+            .with_transparent(config.window_config.transparent)
+            .with_window_icon(config.window_config.icon.take())
             .with_inner_size(LogicalSize::<f64>::new(
-                window_config.width,
-                window_config.height,
+                config.window_config.width,
+                config.window_config.height,
             ));
 
         set_resource_cache_total_bytes_limit(1000000); // 1MB
         set_resource_cache_single_allocation_byte_limit(Some(500000)); // 0.5MB
 
-        if let Some(min_size) = window_config.min_width.zip(window_config.min_height) {
-            window_builder = window_builder.with_min_inner_size(LogicalSize::<f64>::from(min_size))
+        if let Some(min_size) = config
+            .window_config
+            .min_width
+            .zip(config.window_config.min_height)
+        {
+            window_attributes =
+                window_attributes.with_min_inner_size(LogicalSize::<f64>::from(min_size))
         }
 
-        if let Some(max_size) = window_config.max_width.zip(window_config.max_height) {
-            window_builder = window_builder.with_max_inner_size(LogicalSize::<f64>::from(max_size))
+        if let Some(max_size) = config
+            .window_config
+            .max_width
+            .zip(config.window_config.max_height)
+        {
+            window_attributes =
+                window_attributes.with_max_inner_size(LogicalSize::<f64>::from(max_size))
         }
 
-        if let Some(with_window_builder) = &window_config.window_builder_hook {
-            window_builder = (with_window_builder)(window_builder);
+        if let Some(with_window_attributes) = &config.window_config.window_attributes_hook {
+            window_attributes = (with_window_attributes)(window_attributes);
         }
 
         let template = ConfigTemplateBuilder::new()
             .with_alpha_size(8)
-            .with_transparency(window_config.transparent);
+            .with_transparency(config.window_config.transparent);
 
-        let display_builder = DisplayBuilder::new().with_window_builder(Some(window_builder));
+        let display_builder = DisplayBuilder::new().with_window_attributes(Some(window_attributes));
         let (window, gl_config) = display_builder
             .build(event_loop, template, |configs| {
                 configs
@@ -98,17 +167,23 @@ impl<T: Clone> WindowEnv<T> {
             .unwrap();
 
         let mut window = window.expect("Could not create window with OpenGL context");
+
+        // Allow IME
         window.set_ime_allowed(true);
-        let raw_window_handle = window.raw_window_handle();
+
+        // Mak the window visible once built
+        window.set_visible(true);
+
+        let window_handle = window.window_handle().unwrap();
 
         let context_attributes = ContextAttributesBuilder::new()
             .with_profile(GlProfile::Core)
-            .build(Some(raw_window_handle));
+            .build(Some(window_handle.as_raw()));
 
         let fallback_context_attributes = ContextAttributesBuilder::new()
             .with_profile(GlProfile::Core)
             .with_context_api(ContextApi::Gles(None))
-            .build(Some(raw_window_handle));
+            .build(Some(window_handle.as_raw()));
 
         let not_current_gl_context = unsafe {
             gl_config
@@ -125,7 +200,7 @@ impl<T: Clone> WindowEnv<T> {
         let (width, height): (u32, u32) = window.inner_size().into();
 
         let attrs = SurfaceAttributesBuilder::<WindowSurface>::new().build(
-            raw_window_handle,
+            window_handle.as_raw(),
             NonZeroU32::new(width).unwrap(),
             NonZeroU32::new(height).unwrap(),
         );
@@ -140,6 +215,11 @@ impl<T: Clone> WindowEnv<T> {
         let gl_context = not_current_gl_context
             .make_current(&gl_surface)
             .expect("Could not make GL context current when setting up skia renderer");
+
+        // Try setting vsync.
+        gl_surface
+            .set_swap_interval(&gl_context, SwapInterval::Wait(NonZeroU32::new(1).unwrap()))
+            .ok();
 
         load_with(|s| {
             gl_config
@@ -157,7 +237,7 @@ impl<T: Clone> WindowEnv<T> {
         .expect("Could not create interface");
 
         let mut gr_context =
-            DirectContext::new_gl(interface, None).expect("Could not create direct context");
+            direct_contexts::make_gl(interface, None).expect("Could not create direct context");
 
         let fb_info = {
             let mut fboid: GLint = 0;
@@ -181,80 +261,43 @@ impl<T: Clone> WindowEnv<T> {
             stencil_size,
         );
 
-        let sf = window.scale_factor() as f32;
-        surface.canvas().scale((sf, sf));
+        let scale_factor = window.scale_factor();
+        surface
+            .canvas()
+            .scale((scale_factor as f32, scale_factor as f32));
 
-        WindowEnv {
+        let mut app = Application::new(
+            sdom,
+            vdom,
+            event_loop_proxy,
+            devtools,
+            &window,
+            config.embedded_fonts,
+            config.plugins,
+            config.default_fonts,
+        );
+
+        app.init_doms(scale_factor as f32, config.state.clone());
+        app.process_layout(window.inner_size(), scale_factor);
+
+        *self = WindowState::Created(CreatedState {
+            gr_context,
             surface,
             gl_surface,
             gl_context,
-            gr_context,
+            window,
             fb_info,
             num_samples,
             stencil_size,
-            window,
-            window_config,
-        }
-    }
-
-    /// Get a reference to the Canvas.
-    pub fn canvas(&mut self) -> &Canvas {
-        self.surface.canvas()
-    }
-
-    /// Clear the canvas.
-    pub fn clear(&mut self) {
-        let canvas = self.surface.canvas();
-        canvas.clear(self.window_config.background);
-    }
-
-    /// Flush and submit the canvas.
-    pub fn finish_render(&mut self) {
-        self.window.pre_present_notify();
-        self.gr_context.flush_and_submit();
-        self.gl_surface.swap_buffers(&self.gl_context).unwrap();
-    }
-
-    /// Resize the Window
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.surface = create_surface(
-            &mut self.window,
-            self.fb_info,
-            &mut self.gr_context,
-            self.num_samples,
-            self.stencil_size,
-        );
-
-        let (width, height): (u32, u32) = size.into();
-
-        self.gl_surface.resize(
-            &self.gl_context,
-            NonZeroU32::new(width.max(1)).unwrap(),
-            NonZeroU32::new(height.max(1)).unwrap(),
-        );
-
-        self.window.request_redraw();
-    }
-
-    /// Run the `on_setup` callback that was passed to the launch function
-    pub fn run_on_setup(&mut self) {
-        let on_setup = self.window_config.on_setup.clone();
-        if let Some(on_setup) = on_setup {
-            (on_setup)(&mut self.window)
-        }
-    }
-
-    /// Run the `on_exit` callback that was passed to the launch function
-    pub fn run_on_exit(&mut self) {
-        let on_exit = self.window_config.on_exit.clone();
-        if let Some(on_exit) = on_exit {
-            (on_exit)(&mut self.window)
-        }
+            app,
+            window_config: config.window_config,
+            is_window_focused: false,
+        });
     }
 }
 
 /// Create the surface for Skia to render in
-fn create_surface(
+pub fn create_surface(
     window: &mut Window,
     fb_info: FramebufferInfo,
     gr_context: &mut DirectContext,

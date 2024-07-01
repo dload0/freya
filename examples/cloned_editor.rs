@@ -1,16 +1,17 @@
-use freya::events::MouseEvent;
-use freya::prelude::*;
+use freya::{
+    events::MouseEvent,
+    prelude::*,
+};
 
 fn main() {
     launch_cfg(
         app,
-        LaunchConfig::<()>::builder()
+        LaunchConfig::<()>::new()
             .with_width(900.0)
             .with_height(500.0)
             .with_decorations(true)
             .with_transparency(false)
-            .with_title("Editor")
-            .build(),
+            .with_title("Editor"),
     );
 }
 
@@ -101,18 +102,17 @@ fn Body() -> Element {
                             height: "35",
                             direction: "horizontal",
                             background: "{line_background}",
-                            rect {
+                            label {
+                                main_align: "center",
                                 width: "30",
                                 height: "100%",
-                                main_align: "center",
-                                direction: "horizontal",
-                                label {
-                                    font_size: "15",
-                                    color: "rgb(200, 200, 200)",
-                                    "{line_index + 1} "
-                                }
+                                text_align: "center",
+                                font_size: "15",
+                                color: "rgb(200, 200, 200)",
+                                "{line_index + 1} "
                             }
                             paragraph {
+                                main_align: "center",
                                 height: "100%",
                                 width: "100%",
                                 cursor_index: "{character_index}",
@@ -122,7 +122,7 @@ fn Body() -> Element {
                                 cursor_id: "{line_index}",
                                 onmousedown,
                                 onmouseover,
-                                highlights: highlights,
+                                highlights,
                                 text {
                                     color: "rgb(240, 240, 240)",
                                     font_size: "15",
@@ -138,7 +138,7 @@ fn Body() -> Element {
                     width: "50%".into(),
                 }),
                 length: editor.len_lines(),
-                item_size: 35.0,
+                item_size: 60.0,
                 scroll_with_arrows: false,
                 cache_elements: false,
                 builder: move |line_index, _: &Option<()>| {
@@ -175,21 +175,20 @@ fn Body() -> Element {
                         rect {
                             key: "{line_index}",
                             width: "100%",
-                            height: "35",
+                            height: "60",
                             direction: "horizontal",
                             background: "{line_background}",
-                            rect {
+                            label {
+                                main_align: "center",
                                 width: "30",
                                 height: "100%",
-                                main_align: "center",
-                                direction: "horizontal",
-                                label {
-                                    font_size: "15",
-                                    color: "rgb(200, 200, 200)",
-                                    "{line_index + 1} "
-                                }
+                                text_align: "center",
+                                font_size: "15",
+                                color: "rgb(200, 200, 200)",
+                                "{line_index + 1} "
                             }
                             paragraph {
+                                main_align: "center",
                                 height: "100%",
                                 width: "100%",
                                 cursor_index: "{character_index}",
@@ -199,7 +198,8 @@ fn Body() -> Element {
                                 cursor_id: "{line_index}",
                                 onmousedown,
                                 onmouseover,
-                                highlights: highlights,
+                                highlights,
+                                highlight_mode: "expanded",
                                 text {
                                     color: "rgb(240, 240, 240)",
                                     font_size: "15",

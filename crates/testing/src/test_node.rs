@@ -1,8 +1,18 @@
 use freya_core::node::NodeState;
-use freya_native_core::NodeId;
-use freya_native_core::{node::NodeType, real_dom::NodeImmutable};
-use freya_node_state::{CustomAttributeValues, Style, ViewportState};
-use torin::{geometry::Area, prelude::LayoutNode};
+use freya_native_core::{
+    node::NodeType,
+    real_dom::NodeImmutable,
+    NodeId,
+};
+use freya_node_state::{
+    CustomAttributeValues,
+    StyleState,
+    ViewportState,
+};
+use torin::{
+    geometry::Area,
+    prelude::LayoutNode,
+};
 
 use crate::test_utils::TestUtils;
 
@@ -58,14 +68,14 @@ impl TestNode {
     }
 
     /// Get the Node style
-    pub fn style(&self) -> Style {
+    pub fn style(&self) -> StyleState {
         self.utils
             .sdom
             .get()
             .rdom()
             .get(self.node_id)
             .unwrap()
-            .get::<Style>()
+            .get::<StyleState>()
             .unwrap()
             .clone()
     }

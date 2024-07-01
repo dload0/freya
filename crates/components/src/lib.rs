@@ -3,6 +3,7 @@
 
 mod accordion;
 mod activable_route;
+mod animated_router;
 mod body;
 mod button;
 mod canvas;
@@ -30,13 +31,16 @@ mod slider;
 mod snackbar;
 mod switch;
 mod table;
+mod tabs;
 mod theme;
 mod tile;
 mod tooltip;
+mod tree;
 mod window_drag_area;
 
 pub use accordion::*;
 pub use activable_route::*;
+pub use animated_router::*;
 pub use body::*;
 pub use button::*;
 pub use canvas::*;
@@ -64,7 +68,9 @@ pub use slider::*;
 pub use snackbar::*;
 pub use switch::*;
 pub use table::*;
+pub use tabs::*;
 pub use theme::*;
 pub use tile::*;
 pub use tooltip::*;
+pub use tree::*;
 pub use window_drag_area::*;
